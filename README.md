@@ -18,7 +18,7 @@ These scripts had the following goals:
 The solution has the following elements:
 
 - *A VM for isolation*. I'm using [Tart](https://tart.run/) since I'm on Mac, but I'll need to extend this to go cross-platform. Base images can be quickly cloned, and then thrown away once the bug is fixed.
-- *Local IDE*. [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) allows local editing against a remote machine.
+- *Local IDE*. [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) allows local editing against a remote machine. 
 - *Access to local maven repository.* Usually, when I'm running a reproducer, I'll want to run it against a `999-SNAPSHOT` version of the open source project, and continue editing that project locally. But I don't want to mount my maven repository into the isolated VM, or I lose all the isolation. Overlay filesystems are the answer. The scripts mount my maven repo into the sandbox, so it can see my patched dependencies, but any changes made by the isolated VM go onto an overlay filesystem.
 
 ## Prerequisites
@@ -71,7 +71,7 @@ The script will:
 2. Boot the VM headless
 3. Copy your SSH key into the VM
 4. Mount your local `~/.m2` as a read-only overlay (the VM can see your cached artifacts and snapshots, but can't modify your host `.m2`)
-5. Download and install the IntelliJ IDEA backend inside the VM (Gateway does this automatically when connecting interactively, but not when launched via a URL scheme)
+5. Download and install the IntelliJ IDEA backend inside the VM (Gateway does this automatically when connecting interactively, but [not when launched via a URL scheme](https://youtrack.jetbrains.com/projects/TBX/issues/TBX-14811/Support-Launching-Remote-IDE-via-URL-Scheme-in-Toolbox))
 6. Clone the reproducer repo inside the VM
 7. Open JetBrains Gateway connected to the project
 
