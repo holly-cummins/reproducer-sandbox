@@ -41,6 +41,11 @@ if ! command -v tart &>/dev/null; then
     exit 1
 fi
 
+if ! command -v jq &>/dev/null; then
+    echo "Error: 'jq' is not installed. Install with: brew install jq"
+    exit 1
+fi
+
 if [[ ! -f "$SSH_KEY" ]]; then
     echo "Error: SSH public key not found at $SSH_KEY"
     echo "Generate one with: ssh-keygen -t ed25519"
@@ -65,12 +70,9 @@ cleanup() {
     # Remove stale Gateway environment
     REMOTE_PROJECTS=~/Library/Caches/JetBrains/Toolbox/remote_projects.json
     if [[ -f "$REMOTE_PROJECTS" ]]; then
-        python3 -c "
-import json, sys
-with open('$REMOTE_PROJECTS') as f: data = json.load(f)
-data = [e for e in data if '$VM_IP' not in e.get('environmentId','')]
-with open('$REMOTE_PROJECTS','w') as f: json.dump(data, f, indent=4)
-" 2>/dev/null || true
+        jq --arg ip "$VM_IP" '[.[] | select(.environmentId // "" | contains($ip) | not)]' \
+            "$REMOTE_PROJECTS" > "${REMOTE_PROJECTS}.tmp" && mv "${REMOTE_PROJECTS}.tmp" "$REMOTE_PROJECTS" \
+            2>/dev/null || true
     fi
     kill "$TART_PID" 2>/dev/null || true
     wait "$TART_PID" 2>/dev/null || true
@@ -183,9 +185,9 @@ PROJECT_PATH="/home/$VM_USER/$REPO_NAME"
 
 # --- Launch Gateway ---
 echo "==> Launching JetBrains Gateway..."
-ENCODED_PROJECT_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${PROJECT_PATH}'))")
+ENCODED_PROJECT_PATH=$(jq -rn --arg p "${PROJECT_PATH}" '$p | @uri')
 if [[ -n "$IDE_PATH" ]]; then
-    ENCODED_IDE_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${IDE_PATH}'))")
+    ENCODED_IDE_PATH=$(jq -rn --arg p "${IDE_PATH}" '$p | @uri')
     open "jetbrains-gateway://connect#type=ssh&deploy=false&host=${VM_IP}&port=22&user=${VM_USER}&projectPath=${ENCODED_PROJECT_PATH}&idePath=${ENCODED_IDE_PATH}"
 else
     echo "Warning: IDE backend not found in base image. Run sandbox-reproducer-setup to install it."

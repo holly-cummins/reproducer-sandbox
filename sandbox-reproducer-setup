@@ -108,7 +108,7 @@ expect {
 
 # --- Install packages ---
 echo "==> Installing JDK, Maven, and Git..."
-run_ssh "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk maven git"
+run_ssh "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk maven git jq"
 
 # --- Install IDE backend ---
 echo "==> Installing IntelliJ IDEA backend (this may take a minute)..."
@@ -128,19 +128,14 @@ fi
 
 ssh "${SSH_OPTS[@]}" "$VM_USER@$VM_IP" bash <<'REMOTE'
 RELEASE_INFO=$(curl -s "https://data.services.jetbrains.com/products/releases?code=IIU&latest=true&type=release")
-DOWNLOAD_URL=$(echo "$RELEASE_INFO" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-arm = data['IIU'][0]['downloads'].get('linuxARM64', {})
-print(arm.get('link', ''))
-")
+DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.IIU[0].downloads.linuxARM64.link // empty')
 
 if [ -z "$DOWNLOAD_URL" ]; then
     echo "Warning: Could not find IDE download URL — skipping"
     exit 0
 fi
 
-BUILD=$(echo "$RELEASE_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['IIU'][0]['build'])")
+BUILD=$(echo "$RELEASE_INFO" | jq -r '.IIU[0].build')
 IDE_DIR="$HOME/.cache/JetBrains/RemoteDev/dist/IU-${BUILD}"
 
 mkdir -p "$HOME/.cache/JetBrains/RemoteDev/dist"
