@@ -70,9 +70,12 @@ cleanup() {
     # Remove stale Gateway environment
     REMOTE_PROJECTS=~/Library/Caches/JetBrains/Toolbox/remote_projects.json
     if [[ -f "$REMOTE_PROJECTS" ]]; then
-        jq --arg ip "$VM_IP" '[.[] | select(.environmentId // "" | contains($ip) | not)]' \
-            "$REMOTE_PROJECTS" > "${REMOTE_PROJECTS}.tmp" && mv "${REMOTE_PROJECTS}.tmp" "$REMOTE_PROJECTS" \
-            2>/dev/null || true
+        if jq --arg ip "$VM_IP" '[.[] | select(.environmentId // "" | contains($ip) | not)]' \
+            "$REMOTE_PROJECTS" > "${REMOTE_PROJECTS}.tmp" 2>/dev/null; then
+            mv "${REMOTE_PROJECTS}.tmp" "$REMOTE_PROJECTS"
+        else
+            rm -f "${REMOTE_PROJECTS}.tmp"
+        fi
     fi
     kill "$TART_PID" 2>/dev/null || true
     wait "$TART_PID" 2>/dev/null || true
