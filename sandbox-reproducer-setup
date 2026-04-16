@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- Configuration ---
+BASE_IMAGE="${TART_BASE_IMAGE:-reproducer-base}"
+SOURCE_IMAGE="${TART_SOURCE_IMAGE:-ghcr.io/cirruslabs/ubuntu:latest}"
+VM_USER="admin"
+VM_PASSWORD="admin"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+# --- Usage ---
+usage() {
+    cat <<EOF
+Usage: $(basename "$0")
+
+Create and configure the base VM image for sandbox-reproducer.
+Downloads an Ubuntu VM and installs JDK, Maven, and Git.
+
+Environment variables:
+  TART_BASE_IMAGE    Name for the base image (default: reproducer-base)
+  TART_SOURCE_IMAGE  OCI image to clone from (default: ghcr.io/cirruslabs/ubuntu:latest)
+EOF
+    exit 1
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+fi
+
+# --- Dependency checks ---
+if ! command -v tart &>/dev/null; then
+    echo "Error: 'tart' is not installed. Install with: brew install cirruslabs/cli/tart"
+    exit 1
+fi
+
+# --- Check for existing image ---
+if tart list 2>/dev/null | awk '{print $2}' | grep -q "^${BASE_IMAGE}$"; then
+    echo "Base image '$BASE_IMAGE' already exists."
+    read -p "Delete and recreate? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+    tart delete "$BASE_IMAGE"
+fi
+
+# --- Clone source image ---
+echo "==> Cloning $SOURCE_IMAGE as '$BASE_IMAGE'..."
+tart clone "$SOURCE_IMAGE" "$BASE_IMAGE"
+
+# --- Increase RAM for IDE backend ---
+echo "==> Configuring VM (16GB RAM)..."
+tart set "$BASE_IMAGE" --memory 16384
+
+# --- Boot VM ---
+echo "==> Starting VM..."
+tart run "$BASE_IMAGE" --no-graphics &
+TART_PID=$!
+
+cleanup() {
+    kill "$TART_PID" 2>/dev/null || true
+    wait "$TART_PID" 2>/dev/null || true
+}
+trap cleanup ERR
+
+# --- Wait for IP ---
+echo "==> Waiting for VM IP..."
+VM_IP=""
+for i in $(seq 1 60); do
+    VM_IP=$(tart ip "$BASE_IMAGE" 2>/dev/null || true)
+    if [[ -n "$VM_IP" ]]; then
+        break
+    fi
+    sleep 1
+done
+
+if [[ -z "$VM_IP" ]]; then
+    echo "Error: VM did not get an IP within 60 seconds"
+    cleanup
+    exit 1
+fi
+echo "    IP: $VM_IP"
+
+# --- Wait for SSH ---
+echo "==> Waiting for SSH..."
+for i in $(seq 1 60); do
+    if nc -z -w2 "$VM_IP" 22 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+sleep 2
+
+# --- Helper to run commands via SSH with password ---
+run_ssh() {
+    expect -c "
+set timeout 600
+spawn ssh $SSH_OPTS $VM_USER@$VM_IP \"$1\"
+expect {
+    \"*assword:\" { send \"$VM_PASSWORD\r\"; exp_continue }
+    eof { }
+}
+" 2>&1
+}
+
+# --- Install packages ---
+echo "==> Installing JDK, Maven, and Git..."
+run_ssh "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk maven git"
+
+# --- Install IDE backend ---
+echo "==> Installing IntelliJ IDEA backend (this may take a minute)..."
+# Copy SSH key so we can use heredoc-based SSH for the multi-line script
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519.pub}"
+if [[ -f "$SSH_KEY" ]]; then
+    expect -c "
+set timeout 30
+spawn ssh-copy-id $SSH_OPTS -i $SSH_KEY $VM_USER@$VM_IP
+expect {
+    \"*assword:\" { send \"$VM_PASSWORD\r\"; exp_continue }
+    \"*already exist*\" { }
+    eof { }
+}
+" >/dev/null 2>&1
+fi
+
+ssh $SSH_OPTS "$VM_USER@$VM_IP" bash <<'REMOTE'
+RELEASE_INFO=$(curl -s "https://data.services.jetbrains.com/products/releases?code=IIU&latest=true&type=release")
+DOWNLOAD_URL=$(echo "$RELEASE_INFO" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+arm = data['IIU'][0]['downloads'].get('linuxARM64', {})
+print(arm.get('link', ''))
+")
+
+if [ -z "$DOWNLOAD_URL" ]; then
+    echo "Warning: Could not find IDE download URL — skipping"
+    exit 0
+fi
+
+BUILD=$(echo "$RELEASE_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['IIU'][0]['build'])")
+IDE_DIR="$HOME/.cache/JetBrains/RemoteDev/dist/IU-${BUILD}"
+
+mkdir -p "$HOME/.cache/JetBrains/RemoteDev/dist"
+echo "Downloading IntelliJ IDEA backend..."
+curl -L "$DOWNLOAD_URL" 2>/dev/null | tar xz -C /tmp
+EXTRACTED=$(ls -d /tmp/idea-IU-* 2>/dev/null | head -1)
+mv "$EXTRACTED" "$IDE_DIR"
+echo "IDE backend installed at $IDE_DIR"
+REMOTE
+
+# --- Shut down ---
+echo "==> Shutting down VM..."
+run_ssh "sudo shutdown -h now"
+
+# Wait for tart process to exit
+wait "$TART_PID" 2>/dev/null || true
+trap - ERR
+
+echo ""
+echo "================================================================"
+echo "Base image '$BASE_IMAGE' is ready."
+echo "Run sandbox-reproducer to use it:"
+echo "  sandbox-reproducer https://github.com/someone/their-reproducer.git"
+echo "================================================================"

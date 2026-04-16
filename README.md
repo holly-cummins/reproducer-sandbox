@@ -37,19 +37,19 @@ brew install cirruslabs/cli/tart
 ## One-time setup: create a base VM image
 
 Create a base image with the JDK and build tools pre-installed. This image gets cloned for each reproducer, so you only do this once.
+We use Ubuntu because Gateway is designed to run against remote Linux systems.
 
 ```bash
-tart clone ghcr.io/cirruslabs/ubuntu:latest reproducer-base
-tart run reproducer-base
+./sandbox-reproducer-setup
 ```
-We use ubuntu because Gateway is designed to run against remote Linux systems.
-Inside the VM, install what you need:
+
+Or without downloading:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y openjdk-21-jdk maven git
-sudo shutdown -h now
+bash <(curl -s https://raw.githubusercontent.com/holly-cummins/reproducer-sandbox/main/sandbox-reproducer-setup)
 ```
+
+This clones an Ubuntu VM, installs JDK 21, Maven, and Git, and configures it with 16GB RAM for the IDE backend.
 
 ## Usage
 
