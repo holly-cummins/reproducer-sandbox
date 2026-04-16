@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- Configuration ---
+BASE_IMAGE="${TART_BASE_IMAGE:-reproducer-base}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519.pub}"
+VM_USER="admin"
+VM_PASSWORD="admin"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+# --- Usage ---
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <repo-url>
+
+Clone a git repo into an isolated Tart VM and open it in IntelliJ via Gateway.
+
+Prerequisites:
+  brew install tart cirruslabs/cli/sshpass
+
+Create a base image (one-time):
+  tart clone ghcr.io/cirruslabs/ubuntu:latest reproducer-base
+  tart run reproducer-base
+  # Inside the VM: sudo apt-get update && sudo apt-get install -y openjdk-21-jdk maven git
+  # Then shut down the VM
+
+Environment variables:
+  TART_BASE_IMAGE   Base VM image to clone (default: reproducer-base)
+  SSH_KEY           Public key to install (default: ~/.ssh/id_ed25519.pub)
+EOF
+    exit 1
+}
+
+if [[ $# -ne 1 ]]; then
+    usage
+fi
+
+# --- Dependency checks ---
+for cmd in tart sshpass; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "Error: '$cmd' is not installed. Install with: brew install $cmd"
+        exit 1
+    fi
+done
+
+if [[ ! -f "$SSH_KEY" ]]; then
+    echo "Error: SSH public key not found at $SSH_KEY"
+    echo "Generate one with: ssh-keygen -t ed25519"
+    exit 1
+fi
+
+# --- Derived names ---
+REPO_URL="$1"
+REPO_NAME=$(basename "$REPO_URL" .git)
+VM_NAME="reproducer-${REPO_NAME}-$(date +%s)"
+
+# --- Cleanup on failure ---
+cleanup() {
+    echo ""
+    echo "Cleaning up VM '$VM_NAME'..."
+    kill "$TART_PID" 2>/dev/null || true
+    wait "$TART_PID" 2>/dev/null || true
+    tart delete "$VM_NAME" 2>/dev/null || true
+}
+
+# --- Create and start VM ---
+echo "==> Creating VM '$VM_NAME' from '$BASE_IMAGE'..."
+tart clone "$BASE_IMAGE" "$VM_NAME"
+
+echo "==> Starting VM (headless)..."
+tart run "$VM_NAME" --no-graphics --dir=m2:"$HOME/.m2":ro &
+TART_PID=$!
+
+# If anything fails from here, clean up
+trap cleanup ERR
+
+# --- Wait for IP ---
+echo "==> Waiting for VM IP..."
+VM_IP=""
+for i in $(seq 1 60); do
+    VM_IP=$(tart ip "$VM_NAME" 2>/dev/null || true)
+    if [[ -n "$VM_IP" ]]; then
+        break
+    fi
+    sleep 1
+done
+
+if [[ -z "$VM_IP" ]]; then
+    echo "Error: VM did not get an IP within 60 seconds"
+    cleanup
+    exit 1
+fi
+echo "    IP: $VM_IP"
+
+# --- Wait for SSH ---
+echo "==> Waiting for SSH..."
+for i in $(seq 1 60); do
+    if nc -z -w2 "$VM_IP" 22 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+
+# Give sshd a moment to fully initialize
+sleep 2
+
+# --- Copy SSH key ---
+echo "==> Copying SSH key..."
+sshpass -p "$VM_PASSWORD" ssh-copy-id $SSH_OPTS -i "$SSH_KEY" "$VM_USER@$VM_IP" 2>/dev/null
+
+# --- Mount .m2 as overlay (host artifacts visible, writes stay in VM) ---
+echo "==> Setting up .m2 overlay..."
+ssh $SSH_OPTS "$VM_USER@$VM_IP" bash <<'REMOTE'
+sudo mkdir -p /mnt/m2-host
+sudo mount -t virtiofs m2 /mnt/m2-host
+mkdir -p /tmp/m2-upper /tmp/m2-work ~/.m2
+sudo mount -t overlay overlay \
+    -o lowerdir=/mnt/m2-host,upperdir=/tmp/m2-upper,workdir=/tmp/m2-work \
+    /home/admin/.m2
+REMOTE
+
+# --- Clone repo ---
+echo "==> Cloning $REPO_URL in VM..."
+ssh $SSH_OPTS "$VM_USER@$VM_IP" "git clone '$REPO_URL' '/home/$VM_USER/$REPO_NAME'"
+
+PROJECT_PATH="/home/$VM_USER/$REPO_NAME"
+
+# --- Launch Gateway ---
+echo "==> Launching JetBrains Gateway..."
+open "jetbrains-gateway://connect#type=ssh&host=${VM_IP}&port=22&user=${VM_USER}&projectPath=${PROJECT_PATH}"
+
+# --- Done ---
+# Remove the ERR trap now that we've succeeded
+trap - ERR
+
+cat <<EOF
+
+================================================================
+VM is running: $VM_NAME (PID: $TART_PID)
+SSH:            ssh $VM_USER@$VM_IP
+Project:        $PROJECT_PATH
+
+To stop and clean up when done:
+  kill $TART_PID && tart delete $VM_NAME
+================================================================
+EOF
