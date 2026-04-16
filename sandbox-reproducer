@@ -6,7 +6,7 @@ BASE_IMAGE="${TART_BASE_IMAGE:-reproducer-base}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519.pub}"
 VM_USER="admin"
 VM_PASSWORD="admin"
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
 
 # --- Usage ---
 usage() {
@@ -49,7 +49,7 @@ fi
 
 # --- Derived names ---
 REPO_URL="$1"
-REPO_NAME=$(basename "$REPO_URL" .git)
+REPO_NAME=$(basename "${REPO_URL%/}" .git)
 VM_NAME="reproducer-${REPO_NAME}-$(date +%s)"
 
 # --- Cleanup on failure ---
@@ -86,12 +86,12 @@ tart run "$VM_NAME" --no-graphics --dir=m2:"$HOME/.m2":ro &
 TART_PID=$!
 
 # If anything fails from here, clean up
-trap cleanup ERR
+trap cleanup ERR INT TERM
 
 # --- Wait for IP ---
 echo "==> Waiting for VM IP..."
 VM_IP=""
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
     VM_IP=$(tart ip "$VM_NAME" 2>/dev/null || true)
     if [[ -n "$VM_IP" ]]; then
         break
@@ -108,7 +108,7 @@ echo "    IP: $VM_IP"
 
 # --- Wait for SSH ---
 echo "==> Waiting for SSH..."
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
     if nc -z -w2 "$VM_IP" 22 2>/dev/null; then
         break
     fi
@@ -118,10 +118,8 @@ done
 # Give sshd a moment to fully initialize
 sleep 2
 
-# --- Register host key and SSH config (so Gateway can connect) ---
+# --- Register SSH config (so Gateway can connect) ---
 echo "==> Registering VM with SSH..."
-ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts 2>/dev/null
-
 SSH_PRIVATE_KEY="${SSH_KEY%.pub}"
 cat >> ~/.ssh/config <<SSHCONF
 # --- $VM_NAME ---
@@ -137,7 +135,7 @@ SSHCONF
 echo "==> Copying SSH key..."
 expect -c "
 set timeout 30
-spawn ssh-copy-id $SSH_OPTS -i $SSH_KEY $VM_USER@$VM_IP
+spawn ssh-copy-id ${SSH_OPTS[*]} -i $SSH_KEY $VM_USER@$VM_IP
 expect {
     \"*assword:\" { send \"$VM_PASSWORD\r\"; exp_continue }
     \"*already exist*\" { }
@@ -147,7 +145,7 @@ expect {
 
 # --- Mount .m2 as overlay (host artifacts visible, writes stay in VM) ---
 echo "==> Setting up .m2 overlay..."
-ssh $SSH_OPTS "$VM_USER@$VM_IP" bash <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$VM_USER@$VM_IP" bash <<'REMOTE'
 # Mount the virtiofs share from the host
 sudo mkdir -p /mnt/m2-host
 if sudo mount -t virtiofs com.apple.virtio-fs.automount /mnt/m2-host 2>/dev/null; then
@@ -174,11 +172,12 @@ REMOTE
 # --- Find IDE backend ---
 # The IDE backend is pre-installed in the base image by sandbox-reproducer-setup.
 # Gateway can't auto-install via URL scheme (https://youtrack.jetbrains.com/issue/TBX-14811)
-IDE_PATH=$(ssh $SSH_OPTS "$VM_USER@$VM_IP" "ls -d ~/.cache/JetBrains/RemoteDev/dist/IU-* 2>/dev/null | head -1")
+IDE_PATH=$(ssh "${SSH_OPTS[@]}" "$VM_USER@$VM_IP" "ls -vd ~/.cache/JetBrains/RemoteDev/dist/IU-* 2>/dev/null | tail -1")
 
 # --- Clone repo ---
 echo "==> Cloning $REPO_URL in VM..."
-ssh $SSH_OPTS "$VM_USER@$VM_IP" "git clone '$REPO_URL' '/home/$VM_USER/$REPO_NAME'"
+QUOTED_URL=$(printf '%q' "$REPO_URL")
+ssh "${SSH_OPTS[@]}" "$VM_USER@$VM_IP" "git clone $QUOTED_URL '/home/$VM_USER/$REPO_NAME'"
 
 PROJECT_PATH="/home/$VM_USER/$REPO_NAME"
 
@@ -194,8 +193,8 @@ else
 fi
 
 # --- Done ---
-# Remove the ERR trap now that we've succeeded
-trap - ERR
+# Remove traps now that we've succeeded
+trap - ERR INT TERM
 
 cat <<EOF
 
