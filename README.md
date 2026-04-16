@@ -71,8 +71,12 @@ The script will:
 2. Boot the VM headless
 3. Copy your SSH key into the VM
 4. Mount your local `~/.m2` as a read-only overlay (the VM can see your cached artifacts and snapshots, but can't modify your host `.m2`)
-5. Clone the reproducer repo inside the VM
-6. Open JetBrains Gateway connected to the project
+5. Download and install the IntelliJ IDEA backend inside the VM (Gateway does this automatically when connecting interactively, but not when launched via a URL scheme)
+6. Clone the reproducer repo inside the VM
+7. Open JetBrains Gateway connected to the project
+
+Gateway will show a confirmation dialog — click **Check Connection and Continue**.
+If macOS asks whether to give IDEA access to your keychain, click **Deny** (the reproducer doesn't need access to your local credentials).
 
 You get a full IntelliJ experience — code completion, debugging, refactoring — with all code and builds running safely inside the VM.
 
