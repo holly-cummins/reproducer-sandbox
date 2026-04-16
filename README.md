@@ -19,7 +19,7 @@ The solution has the following elements:
 
 - *A VM for isolation*. I'm using [Tart](https://tart.run/) since I'm on Mac, but I'll need to extend this to go cross-platform. Base images can be quickly cloned, and then thrown away once the bug is fixed.
 - *Local IDE*. [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) allows local editing against a remote machine. 
-- *Access to local maven repository.* Usually, when I'm running a reproducer, I'll want to run it against a `999-SNAPSHOT` version of the open source project, and continue editing that project locally. But I don't want to mount my maven repository into the isolated VM, or I lose all the isolation. Overlay filesystems are the answer. The scripts mount my maven repo into the sandbox, so it can see my patched dependencies, but any changes made by the isolated VM go onto an overlay filesystem.
+- *Read-only access to local maven repository.* Usually, when I'm running a reproducer, I'll want to run it against a `999-SNAPSHOT` version of the open source project, and continue editing that project locally. But I don't want to mount my maven repository into the isolated VM, or I lose all the isolation. Overlay filesystems are the answer. The scripts mount my maven repo into the sandbox, so it can see my patched dependencies, but any changes made by the isolated VM go onto an overlay filesystem.
 
 ## Prerequisites
 
