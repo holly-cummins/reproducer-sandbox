@@ -55,6 +55,14 @@ sudo shutdown -h now
 
 ## Usage
 
+Without downloading anything:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/holly-cummins/reproducer-sandbox/main/sandbox-reproducer) https://github.com/someone/their-reproducer.git
+```
+
+Or, if you have the script locally:
+
 ```bash
 ./sandbox-reproducer https://github.com/someone/their-reproducer.git
 ```
