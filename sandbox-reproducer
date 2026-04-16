@@ -132,12 +132,27 @@ sshpass -p "$VM_PASSWORD" ssh-copy-id $SSH_OPTS -i "$SSH_KEY" "$VM_USER@$VM_IP" 
 # --- Mount .m2 as overlay (host artifacts visible, writes stay in VM) ---
 echo "==> Setting up .m2 overlay..."
 ssh $SSH_OPTS "$VM_USER@$VM_IP" bash <<'REMOTE'
+# Mount the virtiofs share from the host
 sudo mkdir -p /mnt/m2-host
-sudo mount -t virtiofs m2 /mnt/m2-host
-mkdir -p /tmp/m2-upper /tmp/m2-work ~/.m2
-sudo mount -t overlay overlay \
-    -o lowerdir=/mnt/m2-host,upperdir=/tmp/m2-upper,workdir=/tmp/m2-work \
-    /home/admin/.m2
+if sudo mount -t virtiofs com.apple.virtio-fs.automount /mnt/m2-host 2>/dev/null; then
+    # Tart mounts shared dirs under a single virtiofs mount at this tag
+    M2_LOWER="/mnt/m2-host/m2"
+elif sudo mount -t virtiofs m2 /mnt/m2-host 2>/dev/null; then
+    M2_LOWER="/mnt/m2-host"
+else
+    echo "Warning: Could not mount virtiofs share — .m2 overlay skipped"
+    exit 0
+fi
+
+if [ -d "$M2_LOWER" ]; then
+    mkdir -p /tmp/m2-upper /tmp/m2-work /home/admin/.m2
+    sudo mount -t overlay overlay \
+        -o "lowerdir=$M2_LOWER,upperdir=/tmp/m2-upper,workdir=/tmp/m2-work" \
+        /home/admin/.m2
+    echo ".m2 overlay mounted successfully"
+else
+    echo "Warning: Shared directory not found at $M2_LOWER — .m2 overlay skipped"
+fi
 REMOTE
 
 # --- Clone repo ---
