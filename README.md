@@ -65,6 +65,11 @@ Or, if you have the script locally:
 ./sandbox-reproducer https://github.com/someone/their-reproducer.git
 ```
 
+Be a bit patient, as launching can take a minute or so. Gateway will show a confirmation dialog — click **Confirm Connection**.
+If macOS asks whether to give IDEA access to your keychain, click **Deny** (the reproducer doesn't need access to your local credentials).
+
+You get a full IntelliJ experience — code completion, debugging, refactoring — with all code and builds running safely inside the VM.
+
 The script will:
 
 1. Clone the base VM image to create an isolated, disposable copy
@@ -75,10 +80,6 @@ The script will:
 6. Clone the reproducer repo inside the VM
 7. Open JetBrains Gateway connected to the project
 
-Gateway will show a confirmation dialog — click **Confirm Connection**.
-If macOS asks whether to give IDEA access to your keychain, click **Deny** (the reproducer doesn't need access to your local credentials).
-
-You get a full IntelliJ experience — code completion, debugging, refactoring — with all code and builds running safely inside the VM.
 
 ### Cleanup
 
