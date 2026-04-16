@@ -58,6 +58,12 @@ VM_NAME="reproducer-${REPO_NAME}-$(date +%s)"
 cleanup() {
     echo ""
     echo "Cleaning up VM '$VM_NAME'..."
+    # Remove SSH config block
+    if [[ -f ~/.ssh/config ]]; then
+        sed -i '' "/^# --- $VM_NAME ---$/,/^# --- end $VM_NAME ---$/d" ~/.ssh/config 2>/dev/null || true
+    fi
+    # Remove host key
+    ssh-keygen -R "$VM_IP" 2>/dev/null || true
     kill "$TART_PID" 2>/dev/null || true
     wait "$TART_PID" 2>/dev/null || true
     tart delete "$VM_NAME" 2>/dev/null || true
@@ -104,6 +110,21 @@ done
 # Give sshd a moment to fully initialize
 sleep 2
 
+# --- Register host key and SSH config (so Gateway can connect) ---
+echo "==> Registering VM with SSH..."
+ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+SSH_PRIVATE_KEY="${SSH_KEY%.pub}"
+cat >> ~/.ssh/config <<SSHCONF
+# --- $VM_NAME ---
+Host $VM_NAME
+    HostName $VM_IP
+    User $VM_USER
+    IdentityFile $SSH_PRIVATE_KEY
+    StrictHostKeyChecking no
+# --- end $VM_NAME ---
+SSHCONF
+
 # --- Copy SSH key ---
 echo "==> Copying SSH key..."
 sshpass -p "$VM_PASSWORD" ssh-copy-id $SSH_OPTS -i "$SSH_KEY" "$VM_USER@$VM_IP" 2>/dev/null
@@ -127,7 +148,7 @@ PROJECT_PATH="/home/$VM_USER/$REPO_NAME"
 
 # --- Launch Gateway ---
 echo "==> Launching JetBrains Gateway..."
-open "jetbrains-gateway://connect#type=ssh&host=${VM_IP}&port=22&user=${VM_USER}&projectPath=${PROJECT_PATH}"
+open "jetbrains-gateway://connect#type=ssh&host=${VM_NAME}&port=22&user=${VM_USER}&projectPath=${PROJECT_PATH}"
 
 # --- Done ---
 # Remove the ERR trap now that we've succeeded
@@ -137,10 +158,12 @@ cat <<EOF
 
 ================================================================
 VM is running: $VM_NAME (PID: $TART_PID)
-SSH:            ssh $VM_USER@$VM_IP
+SSH:            ssh $VM_NAME
 Project:        $PROJECT_PATH
 
 To stop and clean up when done:
   kill $TART_PID && tart delete $VM_NAME
+  sed -i '' '/^# --- $VM_NAME ---$/,/^# --- end $VM_NAME ---$/d' ~/.ssh/config
+  ssh-keygen -R $VM_IP
 ================================================================
 EOF
