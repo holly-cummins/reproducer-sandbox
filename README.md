@@ -25,15 +25,13 @@ The solution has the following elements:
 
 - macOS with Apple Silicon
 - [Tart](https://tart.run/) — lightweight VMs using Apple's Virtualization.framework
-- [sshpass](https://github.com/kevinburke/sshpass) — for automated SSH key setup
 - [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) — remote IDE access
 - An SSH key (defaults to `~/.ssh/id_ed25519.pub`)
 
-Install the CLI dependencies:
+Install Tart:
 
 ```bash
 brew install cirruslabs/cli/tart
-brew install esolitos/ipa/sshpass
 ```
 
 ## One-time setup: create a base VM image

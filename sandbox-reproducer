@@ -16,7 +16,7 @@ Usage: $(basename "$0") <repo-url>
 Clone a git repo into an isolated Tart VM and open it in IntelliJ via Gateway.
 
 Prerequisites:
-  brew install tart cirruslabs/cli/sshpass
+  brew install cirruslabs/cli/tart
 
 Create a base image (one-time):
   tart clone ghcr.io/cirruslabs/ubuntu:latest reproducer-base
@@ -36,12 +36,10 @@ if [[ $# -ne 1 ]]; then
 fi
 
 # --- Dependency checks ---
-for cmd in tart sshpass; do
-    if ! command -v "$cmd" &>/dev/null; then
-        echo "Error: '$cmd' is not installed. Install with: brew install $cmd"
-        exit 1
-    fi
-done
+if ! command -v tart &>/dev/null; then
+    echo "Error: 'tart' is not installed. Install with: brew install cirruslabs/cli/tart"
+    exit 1
+fi
 
 if [[ ! -f "$SSH_KEY" ]]; then
     echo "Error: SSH public key not found at $SSH_KEY"
@@ -127,7 +125,15 @@ SSHCONF
 
 # --- Copy SSH key ---
 echo "==> Copying SSH key..."
-sshpass -p "$VM_PASSWORD" ssh-copy-id $SSH_OPTS -i "$SSH_KEY" "$VM_USER@$VM_IP" 2>/dev/null
+expect -c "
+set timeout 30
+spawn ssh-copy-id $SSH_OPTS -i $SSH_KEY $VM_USER@$VM_IP
+expect {
+    \"*assword:\" { send \"$VM_PASSWORD\r\"; exp_continue }
+    \"*already exist*\" { }
+    eof { }
+}
+" >/dev/null 2>&1
 
 # --- Mount .m2 as overlay (host artifacts visible, writes stay in VM) ---
 echo "==> Setting up .m2 overlay..."
