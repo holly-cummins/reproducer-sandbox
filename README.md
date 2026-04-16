@@ -44,7 +44,7 @@ Create a base image with the JDK and build tools pre-installed. This image gets 
 tart clone ghcr.io/cirruslabs/ubuntu:latest reproducer-base
 tart run reproducer-base
 ```
-
+We use ubuntu because Gateway is designed to run against remote Linux systems.
 Inside the VM, install what you need:
 
 ```bash
