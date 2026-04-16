@@ -65,7 +65,7 @@ Or, if you have the script locally:
 ./sandbox-reproducer https://github.com/someone/their-reproducer.git
 ```
 
-Be a bit patient, as launching can take a minute or so. Gateway will show a confirmation dialog — click **Confirm Connection**.
+Be a bit patient, as launching can take a few minutes. Gateway will show a confirmation dialog — click **Check Connection and Continue**.
 If macOS asks whether to give IDEA access to your keychain, click **Deny** (the reproducer doesn't need access to your local credentials).
 
 You get a full IntelliJ experience — code completion, debugging, refactoring — with all code and builds running safely inside the VM.
