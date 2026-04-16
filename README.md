@@ -75,7 +75,7 @@ The script will:
 6. Clone the reproducer repo inside the VM
 7. Open JetBrains Gateway connected to the project
 
-Gateway will show a confirmation dialog — click **Check Connection and Continue**.
+Gateway will show a confirmation dialog — click **Confirm Connection**.
 If macOS asks whether to give IDEA access to your keychain, click **Deny** (the reproducer doesn't need access to your local credentials).
 
 You get a full IntelliJ experience — code completion, debugging, refactoring — with all code and builds running safely inside the VM.
