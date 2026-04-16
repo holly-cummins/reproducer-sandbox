@@ -172,20 +172,16 @@ fi
 REMOTE
 
 # --- Install IDE backend ---
+# Gateway auto-installs when connecting interactively, but not via URL scheme
+# (https://youtrack.jetbrains.com/issue/TBX-14811)
 echo "==> Installing IntelliJ IDEA backend in VM (this may take a minute)..."
 IDE_PATH=$(ssh $SSH_OPTS "$VM_USER@$VM_IP" bash <<'REMOTE'
-# Get the latest IntelliJ IDEA Ultimate download URL for Linux aarch64
 RELEASE_INFO=$(curl -s "https://data.services.jetbrains.com/products/releases?code=IIU&latest=true&type=release")
 DOWNLOAD_URL=$(echo "$RELEASE_INFO" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-for d in data['IIU'][0]['downloads'].values():
-    if 'linuxARM64' in d.get('link', ''):
-        print(d['link']); break
-else:
-    # Try the key directly
-    arm = data['IIU'][0]['downloads'].get('linuxARM64', {})
-    print(arm.get('link', ''))
+arm = data['IIU'][0]['downloads'].get('linuxARM64', {})
+print(arm.get('link', ''))
 ")
 
 if [ -z "$DOWNLOAD_URL" ]; then
